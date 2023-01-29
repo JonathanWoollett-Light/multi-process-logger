@@ -1,0 +1,7 @@
+/target
+Cargo.lock
+
+out.folded
+out.perf
+perf.data
+perf.data.old

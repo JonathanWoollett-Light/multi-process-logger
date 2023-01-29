@@ -1,0 +1,2 @@
+[workspace]
+members = ["logger-client","logger-server","test-process"]

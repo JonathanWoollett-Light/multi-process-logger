@@ -1,0 +1,14 @@
+[package]
+name = "logger-client"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = {version ="0.4.17", features=["std"]}
+
+[dependencies.nix]
+git = 'https://github.com/JonathanWoollett-Light/nix'
+rev = '87da68c0a8d09333e72199fe978b2d6c5191d11b'
+features = []
