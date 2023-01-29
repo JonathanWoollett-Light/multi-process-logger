@@ -15,7 +15,7 @@ cargo install logger-server --git https://github.com/JonathanWoollett-Light/mult
 Add the logger client dependency to your project:
 
 ```rust
-logger-client = { git = "https://github.com/JonathanWoollett-Light/multi-process-logger.git", rev="d64be88108e56fbf908efbdf8a94ae53fa6959f8" }
+logger-client = { git = "https://github.com/JonathanWoollett-Light/multi-process-logger.git", rev="68ca6561d9c8e7dbd78c54b69ec19c11d11c33fc" }
 ```
 
 Within your project initialize the logger with:
