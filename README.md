@@ -2,7 +2,7 @@
 
 A logger implementation for multi-process systems.
 
-
+It has only been tested on Linux.
 
 ![server terminal example](server.png)
 
