@@ -31,7 +31,7 @@ impl Logger {
                     "--",
                     "sh",
                     "-c",
-                    &format!("cargo run --bin logger-server -- --socket {socket}; exec bash"),
+                    &format!("logger-server --socket {socket}; exec bash")
                 ])
                 .spawn()?;
             // Wait for process to start
