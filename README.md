@@ -2,8 +2,6 @@
 
 A logger implementation for multi-process systems.
 
-It has only been tested on Linux.
-
 ![server terminal example](server.png)
 
 ### Setup
@@ -73,3 +71,9 @@ This will spawn the server process if the socket is not found, otherwise it will
 - `d` Down thread
 - `r` Up log
 - `f` Down log
+
+### FAQ
+
+- What platforms are supports? Linux.
+- Why is this not publish on crates.io? I use my own version of Nix (when a new version of Nix is published which includs https://github.com/nix-rust/nix/pull/1882 I may switch to it).
+- Why doesn't it have/do X?  I haven't thought about it, feel free to submit an issue or PR.
