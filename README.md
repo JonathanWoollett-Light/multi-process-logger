@@ -1,1 +1,1 @@
-# test-binary
+# multi-process-logger
