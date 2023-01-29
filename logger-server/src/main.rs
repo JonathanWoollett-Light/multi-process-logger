@@ -210,8 +210,8 @@ fn run_app<B: Backend>(
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Char('q') => break,
-                KeyCode::Char('w') => app.write().unwrap().next_process(),
-                KeyCode::Char('s') => app.write().unwrap().previous_process(),
+                KeyCode::Char('w') => app.write().unwrap().previous_process(),
+                KeyCode::Char('s') => app.write().unwrap().next_process(),
                 KeyCode::Char('e') => app.write().unwrap().previous_thread(),
                 KeyCode::Char('d') => app.write().unwrap().next_thread(),
                 KeyCode::Char('r') => app.write().unwrap().previous_log(),
