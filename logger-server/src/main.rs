@@ -7,6 +7,7 @@ use std::{
     mem::size_of,
     os::unix::net::{UnixListener, UnixStream},
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use clap::Parser;
@@ -15,15 +16,18 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use nix::sys::{
-    epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags},
-    pthread::Pthread,
+use nix::{
+    sys::{
+        epoll::{Epoll, EpollCreateFlags, EpollEvent, EpollFlags},
+        pthread::Pthread,
+    },
+    unistd::Pid,
 };
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::{Block, Borders, List, ListItem, ListState, Row, Table},
     Frame, Terminal,
 };
 
@@ -45,7 +49,13 @@ struct Process {
 
 struct Thread {
     id: Pthread,
-    log: Vec<String>,
+    log: Vec<Log>,
+}
+
+struct Log {
+    time: Duration,
+    level: log::Level,
+    message: String,
 }
 
 struct App {
@@ -293,13 +303,31 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: Arc<RwLock<App>>) {
                 .log
                 .iter()
                 .skip(app.log)
-                .map(|log| ListItem::new(log.clone()))
+                .map(
+                    |Log {
+                         time,
+                         message,
+                         level,
+                     }| {
+                        Row::new(vec![
+                            time.as_micros().to_string(),
+                            level.to_string(),
+                            message.clone(),
+                        ])
+                    },
+                )
                 .collect::<Vec<_>>();
-            List::new(x)
+            Table::new(x)
         }
-        _ => List::new(Vec::new()),
+        _ => Table::new(Vec::new()),
     }
-    .block(Block::default().title("Log").borders(Borders::ALL));
+    .block(Block::default().title("Log").borders(Borders::ALL))
+    .header(Row::new(vec!["Time (μs)", "Level", "Message"]))
+    .widths(&[
+        Constraint::Length(16),
+        Constraint::Length(5),
+        Constraint::Percentage(100),
+    ]);
 
     f.render_widget(log, chunks[2]);
 }
@@ -312,14 +340,20 @@ fn non_blocking(res: std::io::Result<usize>) -> std::io::Result<usize> {
     }
 }
 
-use nix::unistd::Pid;
+#[repr(C)]
+struct LogData {
+    secs: u64,
+    nanos: u32,
+    pid: nix::unistd::Pid,
+    pthread: nix::sys::pthread::Pthread,
+    length: usize,
+    level: log::Level,
+}
 
 fn handle_stream(mut stream: UnixStream, id: usize, app: Arc<RwLock<App>>) {
     stream.set_nonblocking(true).unwrap();
 
-    let mut pid_array = [0; size_of::<Pid>()];
-    let mut pthread_array = [0; size_of::<Pthread>()];
-    let mut length_array = [0; size_of::<usize>()];
+    let mut array = [0; size_of::<LogData>()];
     let mut data = Vec::with_capacity(DEFAULT_CAPACITY);
 
     let epoll = Epoll::new(EpollCreateFlags::empty()).unwrap();
@@ -331,77 +365,67 @@ fn handle_stream(mut stream: UnixStream, id: usize, app: Arc<RwLock<App>>) {
         .unwrap();
 
     loop {
-        // Process
+        // Fixed size data
         // -----------------------------------------------------------------------------------------
-        let mut pid_index = non_blocking(stream.read(&mut pid_array)).unwrap();
-        while pid_index < size_of::<Pid>() {
+        let mut array_index = non_blocking(stream.read(&mut array)).unwrap();
+        while array_index < array.len() {
             epoll.wait(&mut [EpollEvent::empty()], -1).unwrap();
-            pid_index += stream.read(&mut pid_array[pid_index..]).unwrap();
+            array_index += stream.read(&mut array[array_index..]).unwrap();
         }
+        let log_data = unsafe { std::mem::transmute::<_, LogData>(array) };
 
-        // Thread
+        // Dynamic size data
         // -----------------------------------------------------------------------------------------
-        let mut pthread_index = non_blocking(stream.read(&mut pthread_array)).unwrap();
-        while pthread_index < size_of::<Pthread>() {
-            epoll.wait(&mut [EpollEvent::empty()], -1).unwrap();
-            pthread_index += stream.read(&mut pthread_array[pthread_index..]).unwrap();
-        }
-
-        // Length
-        // -----------------------------------------------------------------------------------------
-        let mut length_index = non_blocking(stream.read(&mut length_array)).unwrap();
-        while length_index < size_of::<usize>() {
-            epoll.wait(&mut [EpollEvent::empty()], -1).unwrap();
-            length_index += stream.read(&mut length_array[length_index..]).unwrap();
-        }
-
-        // Data
-        // -----------------------------------------------------------------------------------------
-        let length = usize::from_ne_bytes(length_array);
-        data.resize(length, 0);
+        data.resize(log_data.length, 0);
 
         let mut data_index = non_blocking(stream.read(&mut data)).unwrap();
-        while data_index < length {
+        while data_index < data.len() {
             epoll.wait(&mut [EpollEvent::empty()], -1).unwrap();
             data_index += stream.read(&mut data[data_index..]).unwrap();
         }
 
-        let out = String::from(std::str::from_utf8(&data).unwrap());
+        let message = String::from(std::str::from_utf8(&data).unwrap());
 
-        // Add
+        // Add data
         // -----------------------------------------------------------------------------------------
-        let pid = Pid::from_raw(i32::from_ne_bytes(pid_array));
-        let pthread = Pthread::from_ne_bytes(pthread_array);
         let mut app = app.write().unwrap();
+        let time = Duration::new(log_data.secs, log_data.nanos);
+        let log = Log {
+            time,
+            message,
+            level: log_data.level,
+        };
 
         if let Some(process) = app
             .process_id_map
-            .get(&pid)
+            .get(&log_data.pid)
             .copied()
             .map(|i| &mut app.processes[i])
         {
             if let Some(thread) = process
                 .thread_id_map
-                .get(&pthread)
+                .get(&log_data.pthread)
                 .map(|i| &mut process.threads[*i])
             {
-                thread.log.push(out);
+                thread.log.push(log);
             } else {
-                process.thread_id_map.insert(pthread, process.threads.len());
+                process
+                    .thread_id_map
+                    .insert(log_data.pthread, process.threads.len());
                 process.threads.push(Thread {
-                    id: pthread,
-                    log: vec![out],
+                    id: log_data.pthread,
+                    log: vec![log],
                 });
             }
         } else {
             let len = app.processes.len();
-            app.process_id_map.insert(pid, len);
+            app.process_id_map.insert(log_data.pid, len);
             app.processes.push(Process {
-                id: pid,
-                thread_id_map: std::iter::once((pthread, 0)).collect(),
+                id: log_data.pid,
+                thread_id_map: std::iter::once((log_data.pthread, 0)).collect(),
                 threads: vec![Thread {
-                    id: pthread,
-                    log: vec![out],
+                    id: log_data.pthread,
+                    log: vec![log],
                 }],
             });
         }

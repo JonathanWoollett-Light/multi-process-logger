@@ -31,7 +31,8 @@ impl Logger {
                     "--",
                     "sh",
                     "-c",
-                    &format!("logger-server --socket {socket}; exec bash")
+                    &format!("logger-server --socket {socket}; exec bash"),
+                    // &format!("cargo run --bin logger-server -- --socket {socket}; exec bash"),
                 ])
                 .spawn()?;
             // Wait for process to start
@@ -48,6 +49,16 @@ impl Logger {
     }
 }
 
+#[repr(C)]
+struct LogData {
+    secs: u64,
+    nanos: u32,
+    pid: nix::unistd::Pid,
+    pthread: nix::sys::pthread::Pthread,
+    length: usize,
+    level: log::Level,
+}
+
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= self.log_level
@@ -55,24 +66,30 @@ impl log::Log for Logger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            let mut guard = self.stream.lock().unwrap();
+            let system_time = std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap();
 
-            let pid = nix::unistd::Pid::this();
-            let pid_slice = pid.as_raw().to_ne_bytes();
+            let message = record.args().to_string();
+            let message_bytes = message.as_bytes();
 
-            let pthread_id = nix::sys::pthread::pthread_self();
-            let pthread_id_slice = pthread_id.to_ne_bytes();
+            let fixed = LogData {
+                secs: system_time.as_secs(),
+                nanos: system_time.subsec_nanos(),
+                pid: nix::unistd::Pid::this(),
+                pthread: nix::sys::pthread::pthread_self(),
+                length: message_bytes.len(),
+                level: record.level(),
+            };
+            let array =
+                unsafe { std::mem::transmute::<_, [u8; std::mem::size_of::<LogData>()]>(fixed) };
 
-            let string = format!("{} {}", record.level(), record.args());
-            let string_bytes = string.as_bytes();
-            let string_slice = [&string_bytes.len().to_ne_bytes(), string_bytes].concat();
-
-            let bytes = pid_slice
+            let bytes = array
                 .into_iter()
-                .chain(pthread_id_slice.into_iter())
-                .chain(string_slice.into_iter())
+                .chain(message_bytes.iter().copied())
                 .collect::<Vec<_>>();
-            guard.write_all(&bytes).unwrap();
+
+            self.stream.lock().unwrap().write_all(&bytes).unwrap();
         }
     }
 
