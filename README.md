@@ -74,6 +74,6 @@ This will spawn the server process if the socket is not found, otherwise it will
 
 ### FAQ
 
-- What platforms are supports? Linux.
+- What platforms are supported? Linux.
 - Why is this not publish on crates.io? I use my own version of Nix (when a new version of Nix is published which includs https://github.com/nix-rust/nix/pull/1882 I may switch to it).
 - Why doesn't it have/do X?  I haven't thought about it, feel free to submit an issue or PR.
