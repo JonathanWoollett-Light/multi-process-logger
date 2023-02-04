@@ -148,18 +148,17 @@ impl App {
         }
     }
 
-    pub fn next_log(&mut self) {
+    pub fn next_log(&mut self, n: usize) {
         if let (Some(process), Some(thread)) = (self.process.selected(), self.thread.selected()) {
-            if self.log < self.processes[process].threads[thread].log.len() {
-                self.log += 1;
-            }
+            self.log = std::cmp::min(
+                self.log + n,
+                self.processes[process].threads[thread].log.len() - 1,
+            );
         }
     }
 
-    pub fn previous_log(&mut self) {
-        if self.log > 0 {
-            self.log -= 1;
-        }
+    pub fn previous_log(&mut self, n: usize) {
+        self.log = self.log.checked_sub(n).unwrap_or(0);
     }
 }
 
@@ -224,8 +223,21 @@ fn run_app<B: Backend>(
                 KeyCode::Char('s') => app.write().unwrap().next_process(),
                 KeyCode::Char('e') => app.write().unwrap().previous_thread(),
                 KeyCode::Char('d') => app.write().unwrap().next_thread(),
-                KeyCode::Char('r') => app.write().unwrap().previous_log(),
-                KeyCode::Char('f') => app.write().unwrap().next_log(),
+                KeyCode::Char('r') => app.write().unwrap().previous_log(1),
+                KeyCode::Char('f') => app.write().unwrap().next_log(1),
+                KeyCode::Char('t') => app.write().unwrap().previous_log(2),
+                KeyCode::Char('g') => app.write().unwrap().next_log(2),
+                KeyCode::Char('y') => app.write().unwrap().previous_log(4),
+                KeyCode::Char('h') => app.write().unwrap().next_log(4),
+                KeyCode::Char('u') => app.write().unwrap().log = 0,
+                KeyCode::Char('j') => {
+                    let mut guard = app.write().unwrap();
+                    if let (Some(process), Some(thread)) =
+                        (guard.process.selected(), guard.thread.selected())
+                    {
+                        guard.log = guard.processes[process].threads[thread].log.len() - 1;
+                    }
+                }
                 _ => {}
             }
         }
@@ -302,14 +314,19 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: Arc<RwLock<App>>) {
             let x = app.processes[process].threads[thread]
                 .log
                 .iter()
+                .enumerate()
                 .skip(app.log)
                 .map(
-                    |Log {
-                         time,
-                         message,
-                         level,
-                     }| {
+                    |(
+                        i,
+                        Log {
+                            time,
+                            message,
+                            level,
+                        },
+                    )| {
                         Row::new(vec![
+                            format!("{i:08x}"),
                             time.as_micros().to_string(),
                             level.to_string(),
                             message.clone(),
@@ -322,8 +339,9 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: Arc<RwLock<App>>) {
         _ => Table::new(Vec::new()),
     }
     .block(Block::default().title("Log").borders(Borders::ALL))
-    .header(Row::new(vec!["Time (μs)", "Level", "Message"]))
+    .header(Row::new(vec!["#", "Time (μs)", "Level", "Message"]))
     .widths(&[
+        Constraint::Length(8),
         Constraint::Length(16),
         Constraint::Length(5),
         Constraint::Percentage(100),

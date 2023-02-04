@@ -64,13 +64,22 @@ This will spawn the server process if the socket is not found, otherwise it will
 
 ### Server control
 
+
+
 - `q` Exit
 - `w` Up process
 - `s` Down process
 - `e` Up thread
 - `d` Down thread
-- `r` Up log
-- `f` Down log
+
+#### Log scrolling
+
+Speed|Up|Down
+---|---|---
+1x|`r`|`f`
+2x|`t`|`g`
+4x|`y`|`h`
+End|`u`|`j`
 
 ### FAQ
 
